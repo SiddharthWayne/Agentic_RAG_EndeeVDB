@@ -127,3 +127,13 @@ File ingest (pdf/docx/txt/md)
     -> embed (MiniLM)
     -> Endee upsert (metadata)
 ```
+
+## React Frontend (optional, smoother UI)
+A Vite/React client lives in `app/frontend-react`.
+Run it (after filling `.env` and starting backend):
+```bash
+cd app/frontend-react
+npm install
+npm run dev  # starts on http://localhost:5173
+```
+Configure backend URL via env: `VITE_BACKEND_URL=http://localhost:8000` (create a `.env` in this folder if needed).
