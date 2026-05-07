@@ -1,35 +1,66 @@
 services:
-  endee-oss:
-    image: endee-oss:latest
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Endee Vector Database  (built from source via infra/Dockerfile)
+  # Runs on port 8080 inside the stack; your backend talks to it via
+  # http://endee:8080/api/v1  (Docker internal DNS, no host port needed)
+  # ──────────────────────────────────────────────────────────────────────────
+  endee:
+    build:
+      context: .                  # root of the repo (needs src/, CMakeLists.txt etc.)
+      dockerfile: infra/Dockerfile
+      args:
+        BUILD_ARCH: avx2          # change to "release" if your CPU doesn't support AVX2
+    image: endee-oss:latest       # tag the built image so it's reused on next `up`
     container_name: endee-oss
     ports:
-      - "8080:8080"
+      - "8080:8080"           # expose to host so you can inspect it if needed
     ulimits:
       nofile: 100000
-# ----------------------------------------------------
-# Logging Configuration Block
     logging:
-      driver: "json-file" # Explicitly use the default driver
+      driver: "json-file"
       options:
-        # Set the max size of a single log file to 200 megabytes
-        # Docker rotates the log file when it hits this limit
         max-size: "200m"
-        # Set the maximum number of log files to keep
-        # (200m * 5 files = 1000m or 1 GB total log space)
         max-file: "5"
-# ----------------------------------------------------
     environment:
       NDD_NUM_THREADS: 0
-      NDD_AUTH_TOKEN: "" # Replace with your auth token
+      NDD_AUTH_TOKEN: ""      # set a token here if you want auth on Endee
     volumes:
-      - endee-data:/data
+      - endee-data:/data      # persists your vector index across restarts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Your App  (FastAPI backend + React frontend served as static files)
+  # Built from app/Dockerfile
+  # ──────────────────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ./app           # Docker build context is the app/ folder
+      dockerfile: Dockerfile
+    container_name: rag-app
+    ports:
+      - "8000:8000"            # FastAPI on http://localhost:8000
+    env_file:
+      - ./app/.env             # your real keys go here (copy from .env.example)
+    environment:
+      # Override Endee URL to use Docker internal hostname instead of localhost
+      ENDEE_BASE_URL: "http://endee:8080/api/v1"
+    depends_on:
+      endee:
+        condition: service_healthy   # wait for Endee to be ready before starting
     restart: unless-stopped
 
 volumes:
-  # Modify the 'device' path below to change the host directory used for data persistence
   endee-data:
+    # Uncomment below to bind to a specific host folder instead of a Docker volume
     # driver: local
     # driver_opts:
-    # type: ext4
-    # o: bind
-    # device: ${PWD}/dockerdata
+    #   type: none
+    #   o: bind
+    #   device: ${PWD}/endee-data

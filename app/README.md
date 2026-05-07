@@ -1,139 +1,108 @@
-﻿# Agentic RAG Starter (FastAPI + Streamlit + Endee + Gemini + Tavily)
+﻿# Agentic RAG Stack (FastAPI · React/Vite · Endee · Gemini · Tavily)
 
-This app lets you chat with three routing paths:
-- **Agent** (auto-route): LLM decides whether to use RAG (Endee), Web (Tavily), or Direct (LLM only).
-- **RAG**: embed → Endee search → rerank → Gemini answer with sources.
-- **Web**: Tavily search → Gemini answer with web citations.
-- **Direct**: Gemini only (no retrieval).
+**Summary:** A production-style, multi-route RAG service with an agentic router that chooses between dense RAG (Endee), web RAG (Tavily), or direct LLM answers (Gemini). Docs are chunked, embedded (MiniLM), indexed in Endee, reranked (cross-encoder) for precision, and cited in responses. React/Vite is the primary UI (Lovable export optional); FastAPI backend exposes upload and chat endpoints; runs locally with Endee on 8080 and API on 8000.
+
+## Feature Highlights
+- Upload & index pdf/docx/txt/md; chunk (800/120) + MiniLM embeddings.
+- Rerank with `cross-encoder/ms-marco-MiniLM-L-6-v2` (top 4) for high-precision context.
+- Per-query routing: Agent (auto) or forced RAG/Web/Direct modes.
+- Sources returned for RAG/Web with previews/links; 5-turn chat memory for coherence.
+- Backend CORS open; single backend can serve multiple UIs simultaneously.
+
+## Architecture
+```
+User (React UI)
+    |
+    v
+Mode selector (Agent/RAG/Web/Direct)
+    |
+    +-- Agent -> Router prompt (Gemini) -> choose path
+    |        +-- RAG: embed (MiniLM) -> Endee search -> rerank -> Gemini -> sources
+    |        +-- Web: Tavily search -> Gemini -> web sources
+    |        +-- Direct: Gemini only
+    |
+Uploads -> extract -> chunk -> embed -> Endee upsert (metadata)
+```
 
 ## Tech Stack
 - Backend: FastAPI (`app/backend/main.py`)
-- Frontend: Streamlit (`app/frontend/streamlit_app.py`)
-- Vector DB: Endee server at `http://localhost:8080` (cosine, INT8, dim 384)
+- Frontend: React/Vite (`app/frontend-react`), Lovable export (`app/lov_frontend`)
+- Vector DB: Endee @ `http://localhost:8080` (cosine, INT8)
 - Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
 - Reranker: `cross-encoder/ms-marco-MiniLM-L-6-v2`
-- LLM: Gemini (default `gemini-2.5-flash` via Google AI key)
+- LLM: Gemini (configurable via `.env`)
 - Web search: Tavily API
 
-## Prerequisites
-- Python 3.10+
-- Endee server running locally on 8080 (from `run.sh` or docker-compose)
-- API keys:
-  - `GEMINI_API_KEY` (required)
-  - `TAVILY_API_KEY` (for Web route)
+## Clone & Vector DB (WSL)
+```powershell
+git clone https://github.com/Siddharth-cvhs/endee.git
+cd endee/app
+wsl --install -d Ubuntu-22.04
+# in WSL, from repo root
+sed -i 's/\r$//' install.sh run.sh
+./install.sh --release --avx2
+./run.sh    # Endee on http://localhost:8080
+```
+To restart Endee later (WSL): same three lines above.
 
-## Setup
+## Backend (FastAPI)
 ```powershell
 cd C:\VH811\projects\endee\app
 python -m venv .venv
 . .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-### Environment
-Edit `app/.env` (already created) and set:
-```
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-2.5-flash
-ENDEE_BASE_URL=http://localhost:8080/api/v1
-ENDEE_AUTH_TOKEN=           # blank if Endee auth disabled
-ENDEE_INDEX_NAME=rag_app
-CHUNK_SIZE=800
-CHUNK_OVERLAP=120
-TOP_K=6
-TAVILY_API_KEY=your_tavily_key
-BACKEND_URL=http://localhost:8000
-```
-
-## Run
-Backend:
-```powershell
-cd C:\VH811\projects\endee\app
-. .venv\Scripts\activate
+copy .env.example .env   # fill GEMINI_API_KEY, TAVILY_API_KEY, etc.
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
-Frontend:
+
+## Frontend (React/Vite)
 ```powershell
-cd C:\VH811\projects\endee\app
-. .venv\Scripts\activate
-streamlit run frontend\streamlit_app.py
-```
-Open Streamlit at http://localhost:8501.
-
-## How it Works (Pipeline)
-1) **Uploads**: pdf/docx/txt/md → text extract (pypdf/docx2txt) → chunk (800/120) → embed (MiniLM) → upsert to Endee with metadata.
-2) **Routing** (Agent): quick Gemini prompt decides `rag|web|direct` unless user forces mode via UI radio.
-3) **RAG path**: embed query → Endee top_k=6 → rerank top 4 with cross-encoder → build context → Gemini answers; returns sources (chunk previews).
-4) **Web path**: Tavily search max 5 results → context → Gemini answers; returns web URLs/titles.
-5) **Direct path**: Gemini answers without retrieval.
-6) **History**: last 5 turns sent to LLM for coherence (not for facts).
-
-## Routing Modes in UI
-- Agent (auto): LLM router picks best path.
-- RAG: force vector search.
-- Web: force Tavily search.
-- Direct: force plain LLM.
-
-## Tuning & Performance
-- Lower `TOP_K` or rerank cutoff to reduce latency (currently rerank keeps top 4).
-- Smaller reranker model (e.g., `cross-encoder/ms-marco-MiniLM-L-2-v2`) for speed.
-- Use Direct mode for general chit-chat to avoid retrieval.
-- Warm cache by one request after restart to load HF models.
-
-## Troubleshooting
-- `API key not valid / 403 / 429`: check/replace `GEMINI_API_KEY`, quota or billing; switch model if needed.
-- `TAVILY_API_KEY not configured`: set the key in `.env` for Web mode.
-- Upload errors: ensure file type is pdf/docx/txt/md and Endee server is reachable at `ENDEE_BASE_URL`.
-
-## File Map
-- `app/backend/main.py` — API routes, router, RAG/Web/Direct flows
-- `app/frontend/streamlit_app.py` — UI and routing selector
-- `app/requirements.txt` — dependencies
-- `app/.env` — keys and settings
-
-## Notes
-- Index auto-creates with dimension 384 to match MiniLM embeddings.
-- Sources shown only for RAG/Web modes; direct replies have no citations.
-- Last 5 message pairs are passed for conversational continuity.
-
-## Architecture Diagram (Text)
-```
-User (Streamlit UI)
-    |
-    v
-Routing Selector (Agent/RAG/Web/Direct)
-    |
-    +-- Agent -> Router Prompt (Gemini) -> choose path
-    |        |
-    |        +-- RAG Path:
-    |        |       embed query (MiniLM)
-    |        |       -> Endee search (cosine, INT8, top_k)
-    |        |       -> rerank (cross-encoder)
-    |        |       -> context -> Gemini answer + chunk sources
-    |        |
-    |        +-- Web Path:
-    |        |       Tavily search (max 5)
-    |        |       -> context -> Gemini answer + web sources
-    |        |
-    |        +-- Direct Path:
-    |                Gemini answer (no retrieval)
-    |
-Uploads
-    |
-    v
-File ingest (pdf/docx/txt/md)
-    -> extract text
-    -> chunk (800/120)
-    -> embed (MiniLM)
-    -> Endee upsert (metadata)
-```
-
-## React Frontend (optional, smoother UI)
-A Vite/React client lives in `app/frontend-react`.
-Run it (after filling `.env` and starting backend):
-```bash
 cd app/frontend-react
 npm install
-npm run dev  # starts on http://localhost:5173
+npm run dev -- --host --port 5173
+# set VITE_BACKEND_URL if backend not on localhost:8000
 ```
-Configure backend URL via env: `VITE_BACKEND_URL=http://localhost:8000` (create a `.env` in this folder if needed).
+Lovable export (if used):
+```powershell
+cd app/lov_frontend
+npm install --legacy-peer-deps
+npm run dev -- --host --port 5175
+```
+
+## API Contracts
+- `POST /upload` (multipart): field `file` → `{ "message": "Indexed N chunks..." }`
+- `POST /chat` (JSON):
+  ```json
+  {
+    "message": "...",
+    "mode": "auto|rag|web|direct",
+    "history": [{"user": "...", "answer": "..."}]
+  }
+  ```
+  Response:
+  ```json
+  {
+    "answer": "...",
+    "sources": [{"id": "...", "source": "...", "title": "...", "preview": "...", "score": 0.87}],
+    "mode": "rag|web|direct"
+  }
+  ```
+
+## Tuning Notes
+- Latency: lower `TOP_K` in `.env` or swap reranker to `cross-encoder/ms-marco-MiniLM-L-2-v2`.
+- First-call warmup: run one query after restart to load HF models.
+- Routing: leave on **Agent** for mixed queries; force **RAG** for internal docs, **Web** for current events, **Direct** for chit-chat.
+
+## Troubleshooting
+- LLM 403/429: replace `GEMINI_API_KEY` or use a model with quota.
+- Web mode 400: set `TAVILY_API_KEY`.
+- Import errors: ensure you’re inside `.venv` and `pip install -r requirements.txt` completed.
+
+## Quick Run Summary
+```powershell
+# Endee (WSL): install.sh && run.sh (see above)
+# Backend
+cd app; . .venv\Scripts\activate; pip install -r requirements.txt; uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# Frontend (React)
+cd app/frontend-react; npm install; npm run dev -- --host --port 5173
+```
