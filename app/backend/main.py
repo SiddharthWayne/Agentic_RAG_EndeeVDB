@@ -242,19 +242,45 @@ def retrieve(query: str) -> List[dict]:
 def web_search(query: str) -> List[dict]:
     if not tavily_client:
         raise HTTPException(status_code=500, detail="TAVILY_API_KEY not configured")
-    res = tavily_client.search(query=query, max_results=5, include_images=False)
-    return [
-        {
-            "id": item.get("url"),
-            "meta": {
-                "source": item.get("url"),
-                "text":   item.get("content", ""),
-                "title":  item.get("title", ""),
-            },
-            "score": item.get("score"),
-        }
-        for item in res.get("results", [])
-    ]
+
+    def _parse(res) -> List[dict]:
+        return [
+            {
+                "id": item.get("url"),
+                "meta": {
+                    "source": item.get("url"),
+                    "text":   item.get("content", ""),
+                    "title":  item.get("title", ""),
+                },
+                "score": item.get("score"),
+            }
+            for item in res.get("results", [])
+        ]
+
+    # Try news search first (last 7 days) for fresh results
+    try:
+        res = tavily_client.search(
+            query=query,
+            max_results=5,
+            include_images=False,
+            search_depth="advanced",
+            topic="news",
+            days=7,
+        )
+        results = _parse(res)
+        if results:
+            return results
+    except Exception:
+        pass
+
+    # Fallback to general web search if news returns nothing
+    res = tavily_client.search(
+        query=query,
+        max_results=5,
+        include_images=False,
+        search_depth="advanced",
+    )
+    return _parse(res)
 
 # ── Prompt builders ────────────────────────────────────────────────────────────
 
@@ -311,7 +337,23 @@ def route_query(question: str, force_mode: str = "auto") -> str:
 def answer(question: str, context_docs: List[dict], history: List[dict], mode: str) -> dict:
     history_text = build_history_text(history)
 
-    if context_docs:
+    if context_docs and mode == "web":
+        # ── Web mode: context is live search results, not uploaded documents ──
+        context_text = build_context(context_docs)
+        prompt = (
+            "You are a helpful assistant answering questions using live web search results.\n\n"
+            "=== WEB SEARCH RESULTS ===\n"
+            "The following content was retrieved from the internet right now via a web search. "
+            "Use it to answer the question. Cite sources by their title or URL where relevant.\n\n"
+            f"{context_text}\n\n"
+            "=== END OF WEB RESULTS ===\n\n"
+        )
+        if history_text:
+            prompt += f"=== CONVERSATION HISTORY ===\n{history_text}\n\n=== END HISTORY ===\n\n"
+        prompt += f"User question: {question}\n\nAnswer based on the web results above."
+
+    elif context_docs and mode == "rag":
+        # ── RAG mode: context is from uploaded documents ──
         context_text = build_context(context_docs)
         prompt = (
             f"{SYSTEM_PROMPT}\n\n"
@@ -329,11 +371,12 @@ def answer(question: str, context_docs: List[dict], history: List[dict], mode: s
             "If the context covers the question, answer in full detail. "
             "If it only partially covers it, answer what you can and note what's missing."
         )
+
     else:
-        # Direct mode — no retrieval context
+        # ── Direct mode: no retrieval, answer from general knowledge ──
         prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
-            "No document context was retrieved for this query. Answer from your general knowledge.\n\n"
+            "You are a helpful, knowledgeable assistant. "
+            "Answer the following question clearly and accurately from your own knowledge.\n\n"
         )
         if history_text:
             prompt += f"=== CONVERSATION HISTORY ===\n{history_text}\n\n=== END HISTORY ===\n\n"

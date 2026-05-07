@@ -30,3 +30,19 @@ frontend/*
 
 # DS Store
 .DS_Store
+
+# Node
+node_modules/
+app/lov_frontend/node_modules/
+
+# Python
+app/.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Docker persistent data volume (local only)
+endee-data/
+
+# Environment files (never commit real keys)
+app/.env
