@@ -6,12 +6,14 @@
 
 ## 🚀 Quick Start (Docker — recommended)
 
-**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running. That's it.
+**Prerequisites:** 
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- Git configured with `core.autocrlf=input` (Windows users — see troubleshooting below)
 
 ```bash
 # 1. Clone the repo
-git clone <your-repo-url>
-cd <repo-folder>
+git clone https://github.com/Siddharth-cvhs/ARE.git
+cd ARE
 
 # 2. Create your env file with your API keys
 cp app/.env.example app/.env
@@ -23,7 +25,7 @@ cp app/.env.example app/.env
 docker compose up --build
 ```
 
-That's it. First build takes 5–10 minutes (compiles Endee from C++ source).
+First build takes 5–10 minutes (compiles Endee from C++ source).
 
 | Service | URL |
 |---|---|
@@ -31,6 +33,30 @@ That's it. First build takes 5–10 minutes (compiles Endee from C++ source).
 | Endee Vector DB | http://localhost:8080 |
 
 > **Note:** `ENDEE_BASE_URL` in your `.env` can stay as `localhost:8080` — Docker Compose automatically overrides it to the internal service hostname.
+
+---
+
+## ⚠️ Troubleshooting
+
+**Windows: "env: 'bash\r': No such file or directory" error**
+
+This happens when Git converts line endings to Windows format (CRLF). The `.gitattributes` file in this repo prevents it, but if you cloned before it was added:
+
+```bash
+git config core.autocrlf input
+git rm --cached -r .
+git reset --hard
+docker compose up --build
+```
+
+**Container name conflict error**
+
+If you see `The container name "/endee-oss" is already in use`:
+
+```bash
+docker compose down
+docker compose up --build
+```
 
 ---
 

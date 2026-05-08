@@ -1,0 +1,20 @@
+# Force LF line endings for all text files
+* text=auto eol=lf
+
+# Explicitly force LF for shell scripts (critical for Docker/Linux)
+*.sh text eol=lf
+
+# Force LF for other script types
+*.bash text eol=lf
+*.py text eol=lf
+
+# Let Git handle these as binary (never convert)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.whl binary
